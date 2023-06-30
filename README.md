@@ -42,4 +42,4 @@ https://docs.google.com/spreadsheets/d/{SPREAD_SHEET_ID}/edit#gid=0
 - example, translation 74.txt, 75.txt files
 
 ```
-python3 autoNMTTranslator.py -sp 74 -en 76
+python3 autoNMTTranslator.py -sp 74 -ep 76
