@@ -12,17 +12,17 @@ important python libraries
 
 ## 2. How to use
 
-# Translation
+### Translation
 
-1.  Duplicate prior Google spreadsheet file 
-2.  Copy new spreadsheet's Id value from URL of new spread sheet
+1.  Duplicate the prior Google spreadsheet file 
+2.  Copy the new spreadsheet's Id value from the URL of a new spreadsheet
 
 ```
 https://docs.google.com/spreadsheets/d/{SPREAD_SHEET_ID}/edit#gid=0
 ```
 
 3.  Go to Dashboard Google Spread sheet
-4.  Paste spreadsheet's Id on your part of `sheetID` column
+4.  Paste the spreadsheet's Id on your part of the `sheetID` column
 
 ![](https://hackmd.io/_uploads/SJwBB2iun.png)
 
