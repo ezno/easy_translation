@@ -11,7 +11,26 @@ $ pip install -r requirements.txt
 important python libraries
 
 * Textblob (https://textblob.readthedocs.io/en/dev/)
+```
+$ pip install textblob
+$ python -m textblob.download_corpora
+```
+
 * Google Translation Python client library (https://cloud.google.com/translate/docs/reference/libraries/v2/python)
+```
+$ pip install google-cloud-translate
+```
+
+* Python Client for Google Cloud Storage (https://cloud.google.com/python/docs/reference/storage/latest)
+```
+$ pip install google-cloud-storage
+```
+
+* Google cloud local setting
+```
+gcloud auth application-default login
+gcloud auth application-default set-quota-project eznopub-142102
+```
 
 ## 3. How to use
 
