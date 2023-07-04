@@ -35,6 +35,7 @@ import os.path
 import pickle
 import deepl
 import argparse
+import csv
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 
 try:
@@ -78,6 +79,7 @@ class G:
 	# NAVER PAPAGO translation API Key	
 	PAPAGO_CLIENT_ID = 'GARBAGEVALUE'
 	PAPAGO_CLIENT_SECRET = 'GARBAGEVALUE'
+	PAPAGO_GLOSSARY_ID = 'GARBAGEVALUE'
 
 	# NAVER PAPAGO translation spare API Key - by Yena
 	''' 
@@ -172,6 +174,19 @@ def get_glossary_from_sheet():
 		csv_content = "\n".join([",".join(row) for row in values])
 
 	return glossary_dictionary, csv_content
+
+
+def dict_to_csv(dictionary, filename):
+    # Create a list of key-value pairs
+    rows = [(key, value) for key, value in dictionary.items()]
+
+    # Create a CSV file and write the key-value pairs
+    with open(filename, 'w', newline='') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(['Key', 'Value'])  # Write column headers
+        writer.writerows(rows)  # Write key-value pairs
+
+    print(f"\tDictionary successfully converted and saved as '{filename}'.")
 
 #  - Upload CSV file on the Google Cloud bucket
 #  - Create Google translation glossary using above file 
@@ -520,23 +535,54 @@ def google_neural_machine_translate_v3(source, from_lang, to, glossary_config):
 
 # NAVER Papago translation - free version
 def naver_neural_machine2_translate(source, from_lang, to):
-
 	params = urllib.parse.urlencode({
-		'source':from_lang,
-		'target':to,
-		'text':source,
+			'source':from_lang,
+			'target':to,
+			'text':source,
 		})
 
 	params = params.encode('utf-8')
 
 	headers = {
-		"X-Naver-Client-Id": G.PAPAGO_CLIENT_ID,
-		"X-Naver-Client-Secret": G.PAPAGO_CLIENT_SECRET,
-		"Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+			"X-Naver-Client-Id": G.PAPAGO_CLIENT_ID,
+			"X-Naver-Client-Secret": G.PAPAGO_CLIENT_SECRET,
+			"Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+			"glossaryKey": G.PAPAGO_GLOSSARY_ID,
 		}
 
 	conn = http.client.HTTPSConnection("openapi.naver.com")
 	conn.request("POST","/v1/papago/n2mt", params, headers)
+	
+	response = conn.getresponse()
+	data = json.loads(response.read())
+
+	try:
+		translated_txt = data['message']['result']['translatedText']
+	except:
+		translated_txt = 'Fail.'
+	conn.close()
+
+	return translated_txt
+
+# NAVER Papago translation 
+def papago_translate(source, from_lang, to):
+
+	params = urllib.parse.urlencode({
+			'source':from_lang,
+			'target':to,
+			'text':source,
+		})
+
+	params = params.encode('utf-8')
+
+	headers = {
+			"X-NCP-APIGW-API-KEY-ID": G.PAPAGO_CLIENT_ID,
+			"X-NCP-APIGW-API-KEY": G.PAPAGO_CLIENT_SECRET,
+			"Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+		}
+
+	conn = http.client.HTTPSConnection("naveropenapi.apigw.ntruss.com")
+	conn.request("POST","/nmt/v1/translatio", params, headers)
 	
 	response = conn.getresponse()
 	data = json.loads(response.read())
@@ -690,9 +736,7 @@ if __name__ == '__main__':
 	G.DEEPL_AUTH_KEY = config.get('API_KEYS', 'DEEPL_AUTH_KEY')
 	G.PAPAGO_CLIENT_ID = config.get('API_KEYS', 'PAPAGO_CLIENT_ID')
 	G.PAPAGO_CLIENT_SECRET = config.get('API_KEYS', 'PAPAGO_CLIENT_SECRET')
-
-	print(G.SPREADSHEET_ID)
-	print(G.PAPAGO_CLIENT_SECRET)
+	G.PAPAGO_GLOSSARY_ID = config.get('API_KEYS', 'PAPAGO_GLOSSARY_ID')
 
 	# For argument parsing
 	parser = argparse.ArgumentParser(
@@ -716,7 +760,10 @@ if __name__ == '__main__':
 
 	print('[INFO] Get glossary data from Google sheet')
 	glossary_dict, csv_content = get_glossary_from_sheet()
+	
+	dict_to_csv(glossary_dict, 'ML_in_R_glossary.csv')
 	glossary_cnt = len(glossary_dict)
+
 	create_google_nmt_glossary_on_GCloud(csv_content, glossary_cnt)
 
 	glossary = get_google_nmt_glossaray()
