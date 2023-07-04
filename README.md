@@ -2,6 +2,11 @@
 
 Translate each sentence of the page you want to translate to Google translation API v3, DeepL API, Naver Papago API, and Kakao translator. And organized the results in a Google Spreadsheet
 
+* Google translation v3 beta API with glossary
+* Papago tranlsation API with glossary 
+* DeepL translation API
+* Kakao tranlsation
+
 ## 2. Installation
 
 ```
