@@ -36,6 +36,7 @@ import pickle
 import deepl
 import argparse
 import csv
+import time
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 
 try:
@@ -140,6 +141,90 @@ def post_string_changer(modified_text):
 			modified_text = re.sub( key, value, modified_text )
 
 	return modified_text
+
+
+def post_string_sanitizer(origText):
+
+	modifiedText = origText
+
+	postReplaceDictionary = {
+		u"&quot;" : '"',
+		u"&amp;" : '&',
+		u"&gt;" : '>',
+		u"&lt;" : '<',
+		u"&#39;" : '"',
+		u"와이어 샤크" : u"와이어샤크",
+		u"브로드 캐스팅" : u"브로드캐스팅",
+		u"멀티 캐스팅" : u"멀티캐스팅",
+		u"루프 백" : u"루프백",
+		u"플로" : u"플로우",
+		u"프락시" : u"프록시",
+		u'스크린숏' : u'스크린샷',
+		u"명령 줄" : u"명령줄",
+		u"명령행" : u"명령줄",
+		u"설루션" : u"솔루션",	
+		u'윈도' : u'윈도우',
+		u'에러' : u'오류',
+		u'진입 전' : u'진입점',
+		u'WordPress' : u'워드프레스',
+	}
+
+	for key, value in postReplaceDictionary.items():
+		if origText.find(key) != -1:
+			modifiedText = re.sub( key, value, modifiedText )
+
+	return modifiedText
+
+
+
+
+def naver_spell_check(q):
+	params = {'_callback': 'window.__jindo2_callback._spellingCheck_0', 'q': q}
+
+	headers = {
+		"User-Agent": "Mozilla/5.0 (iPad; CPU OS 11_0 like Mac OS X) AppleWebKit/604.1.34 (KHTML, like Gecko) Version/11.0 Mobile/15A5341f Safari/604.1",
+		"Content-type": "application/x-www-form-urlencoded; charset=UTF-8", 
+		"Accept": "application/javascript, */*;q=0.8",
+		"Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+		"Host": "m.search.naver.com",
+		"Cookie": "npic=BUJFh0UHQ/Vui5UVdABc/8pO/h93QNOHTB0SsspX37LyufL7PrrceWUDeK6M/l6wCA==; NNB=JNJFCFYP7HNVU; _ga=GA1.2.1110102603.1524441957; ASID=afdf1eaa00000162f0ab8bd60000005c; nx_open_so=1; nid_iplevel=1; nx_ssl=2; BMR=s=1532836444251&r=https%3A%2F%2Fpost.naver.com%2Fviewer%2FpostView.nhn%3FvolumeNo%3D16336242&r2=https%3A%2F%2Fwww.naver.com%2F; _naver_usersession_=QXYOfxkrxVqJdpL2rRPB/g==; page_uid=T2ctAlpVuENssuIyegdssssss4C-514218",
+		"Referer": "https://search.naver.com/search.naver?sm=tab_hty.top&where=nexearch&query=%EB%84%A4%EC%9D%B4%EB%B2%84+%EB%9D%84%EC%96%B4%EC%93%B0%EA%B8%B0+%EA%B2%80%EC%82%AC%EA%B8%B0&oquery=in+conjunction+with&tqi=T2ct4spVuE0ssvTTu3RssssssrG-171059",
+	}
+
+	jsonp_text = requests.get("https://m.search.naver.com/p/csearch/ocontent/spellchecker.nhn", params=params, headers=headers).text
+	jsonp_text = jsonp_text.replace(params['_callback'] + '(', '')
+	json_text = jsonp_text.replace(');', '')
+
+	try:
+		result = json.loads(json_text)
+		print ('* Errota Cnt : ' + str(result['message']['result']['errata_count']))
+		result_html = result['message']['result']['html']
+		result_text = re.sub(r'<\/?.*?>', '', result_html)
+	except:
+		print ('* Skip Spell check.')
+		result_text = q
+
+	return post_string_sanitizer(result_text)
+
+
+def pre_string_sanitizer(origText):
+	modifiedText = origText
+
+	preReplaceDictionary = {
+		r'> ' : '',
+		r'●' : '',
+		r'○' : '',
+	}
+
+	for key, value in preReplaceDictionary.items():
+		if origText.find(key) != -1:
+			modifiedText = re.sub( key, value, modifiedText )
+
+	if( (re.search("#h#", modifiedText) or re.search("#d#", modifiedText) or re.search("#d2#", modifiedText)) and modifiedText[0:1] == ' '):
+		modifiedText = modifiedText[1:]
+	
+	return modifiedText
+
 
 # For Google Translation v3 - glossary ======================================
 # 	- Get glossary data from DashBoard Google Sheet
@@ -374,7 +459,8 @@ def translator(text_path, pageNum, glossary_config):
 					textBlock['source'] = sentence.raw
 
 					# NaverNMT2API results: English > Korean
-					textBlock['naverTrns'] = naver_neural_machine2_translate(sentence.raw, 'en', 'ko')
+					#textBlock['naverTrns'] = naver_neural_machine2_translate(sentence.raw, 'en', 'ko')
+					textBlock['naverTrns'] = papago_translate(sentence.raw, 'en', 'ko')
 		
 					# Google NeuralMachineTranlate results: English > Korean
 					textBlock['googleTrns'] = google_neural_machine_translate_v3(sentence.raw, 'en', 'ko', glossary_config) + ' '
@@ -676,6 +762,36 @@ def get_sheet_id(currentPage):
 				return sheetID
 
 
+def get_google_docs_sheets_id(currentCh):
+	DISCOVERY_URL = ('https://sheets.googleapis.com/$discovery/rest?version=v4')
+	service = discovery.build(
+		'sheets',
+		'v4',
+		http=httplib2.Http(),
+		discoveryServiceUrl=DISCOVERY_URL,
+		developerKey=G.SPREADSHEET_API_KEY,
+	)
+	sheet_range = 'chapter!A:C'
+
+	result = service.spreadsheets().values().get(
+			spreadsheetId=G.SPREADSHEET_ID,
+			range = sheet_range,
+			).execute()
+
+	values = result.get('values', [])
+
+	if not values:
+		print('\t[Error] Can not get Google Docs ID for this chapter Check the google spreadsheet!')
+		return '', ''
+	else:
+		for i in range(0, len(values)):
+			if values[i][0] == str(currentCh):
+				docs_id = values[i][1]
+				sheets_id = values[i][2]
+
+				return docs_id, sheets_id
+
+
 def write_on_google_sheets(page, source, google, glossary, deepl, papago, kakao, style, sentenceNum, spreadsheetId):
 
 	discoveryUrl = ('https://sheets.googleapis.com/$discovery/rest?version=v4')
@@ -721,6 +837,126 @@ def write_on_google_sheets(page, source, google, glossary, deepl, papago, kakao,
 		body=body).execute()
 
 
+def write_google_docs(in_text, docsId):
+	
+	SCOPES = [
+		'https://www.googleapis.com/auth/drive.file',
+		'https://www.googleapis.com/auth/documents',
+		'https://www.googleapis.com/auth/drive',
+	]	
+	
+	requestsDoc = [
+		{
+				"insertText": {
+					"endOfSegmentLocation": {
+						"segmentId": "",
+					},
+				"text": in_text,
+			}
+		}
+	]
+
+	creds = None
+
+	if os.path.exists('token.json'):
+		creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+
+	if not creds or not creds.valid:
+		if creds and creds.expired and creds.refresh_token:
+			creds.refresh(Request())
+		else:
+			flow = InstalledAppFlow.from_client_secrets_file('client_secret.json', SCOPES)
+			creds = flow.run_local_server(port=0)
+
+	# Save the credentials for the next run
+		with open('token.pickle', 'w') as token:
+			pickle.dump(creds, token)
+
+	service = build(
+					'docs', 
+					'v1', 
+					credentials=creds,
+				)
+	# Retrieve the documents contents from the Docs service.
+	document = service.documents().batchUpdate(
+		documentId=docsId, 
+		body={'requests': requestsDoc},
+	).execute()
+
+
+def make_translation_documents(sheets_id, docs_id):
+
+	discovery_url = ('https://sheets.googleapis.com/$discovery/rest?version=v4')
+	SCOPES = [
+		'https://www.googleapis.com/auth/drive',
+		'https://www.googleapis.com/auth/drive.file',
+		'https://www.googleapis.com/auth/spreadsheets',
+		'https://www.googleapis.com/auth/documents',
+	]
+	creds = None
+
+	'''
+	if os.path.exists('token.pickle'):
+		with open('token.pickle', 'rb') as token:
+			creds = pickle.load(token, encoding="bytes")
+		# If there are no (valid) credentials available, let the user log in.
+	'''
+
+	if os.path.exists('token.json'):
+		creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+
+
+	if not creds or not creds.valid:
+		if creds and creds.expired and creds.refresh_token:
+			creds.refresh(Request())
+		else:
+			flow = InstalledAppFlow.from_client_secrets_file('client_secret.json', SCOPES)
+			creds = flow.run_local_server(port=0)
+	# Save the credentials for the next run
+
+		'''
+		with open('token.pickle', 'wb') as token:
+			pickle.dump(creds, token)
+		'''
+	with open('token.json', 'w') as token:
+		token.write(creds.to_json())
+	
+	service = build('sheets', 'v4', credentials=creds)
+
+	sheet_range = 'segments!A:I'
+
+	result = service.spreadsheets().values().get(
+			spreadsheetId=sheets_id,
+			range = sheet_range,
+			).execute()
+
+	translated_values = result.get('values', [])
+
+	paragraph_text = ''
+
+	if not translated_values:
+		print('\t[!]No data found. Check Google spreadsheets!')
+	else:
+		for i in range(1, len(translated_values)):
+			sentence = translated_values[i][2]
+			style = translated_values[i][7]
+			sentence_index = translated_values[i][8]
+
+			if sentence_index == u'1' or i == len(translated_values):
+				paragraph_text = '\n' + paragraph_text + '\n'
+				write_google_docs(paragraph_text, docs_id)
+				paragraph_text = ''
+
+			if style == u'#c#':
+				paragraph_text = paragraph_text + sentence
+			else:
+				replaced_text = post_string_sanitizer(sentence)
+				speelchecked_text = naver_spell_check(replaced_text)
+				paragraph_text = paragraph_text + speelchecked_text
+
+			time.sleep(5)
+
+
 if __name__ == '__main__':
 	#reload(sys)
 	#sys.setdefaultencoding("utf8")
@@ -740,39 +976,66 @@ if __name__ == '__main__':
 
 	# For argument parsing
 	parser = argparse.ArgumentParser(
-	              description = "Translate Automator V7 (2023.6.25.)",
-	              formatter_class = ArgumentDefaultsHelpFormatter )
+		description = "Translate Automator V7.1 (2023.07.13.)",
+		formatter_class = ArgumentDefaultsHelpFormatter )
 
-	# Parse command line arguments
-	parser.add_argument("-sp", "--startPage", help="Translation start page", required=True)
-	parser.add_argument("-ep", "--endPage", help="Translation end page", required=True)
-	args = vars(parser.parse_args())
+	subparsers = parser.add_subparsers(dest="command", help="Available commands")
+	# Two options for this script
+	# Select [1]. translator
+	parser_trans = subparsers.add_parser("trns", help="Process transcripts")
+	parser_trans.add_argument("-sp", "--start-page", type=int, help="Start page")
+	parser_trans.add_argument("-ep", "--end-page", type=int, help="End page")
 
-	# Set up parameters
-	if args["startPage"] is not None:
-	  startPage = (args["startPage"])
+	# Select [2]. create translation goole doc
+	parser_docs = subparsers.add_parser("docs", help="Process documents")
+	parser_docs.add_argument("-ch", "--chapter", type=int, help="Chapter number")
 
-	if args["endPage"] is not None:
-	  # Sequence Numbers for this proeject - 1,3,5,7,10
-  	  endPage = args["endPage"]
+	args = parser.parse_args()
 
-	print(f'[INFO] Translating from {startPage}p to {endPage}p')
+	# Handle option 1
+	if args.command == "trns":
+		if args.start_page is None or args.end_page is None:
+			print('[Error] Both start page(-sp) and end page(-ep) numbers are required with "trns" options')
+		# Set up parameters
+		if args.start_page is not None:
+		  startPage = args.start_page
 
-	print('[INFO] Get glossary data from Google sheet')
-	glossary_dict, csv_content = get_glossary_from_sheet()
-	
-	dict_to_csv(glossary_dict, 'ML_in_R_glossary.csv')
-	glossary_cnt = len(glossary_dict)
+		if args.end_page is not None:
+		  # Sequence Numbers for this proeject - 1,3,5,7,10
+	  	  endPage = args.end_page
 
-	create_google_nmt_glossary_on_GCloud(csv_content, glossary_cnt)
+		print(f'[INFO] Translating from {startPage}p to {endPage}p')
 
-	glossary = get_google_nmt_glossaray()
-	glossary_config = {
+		print('[INFO] Get glossary data from Google sheet')
+		glossary_dict, csv_content = get_glossary_from_sheet()
+		
+		dict_to_csv(glossary_dict, 'ML_in_R_glossary.csv')
+		glossary_cnt = len(glossary_dict)
+
+		create_google_nmt_glossary_on_GCloud(csv_content, glossary_cnt)
+
+		glossary = get_google_nmt_glossaray()
+
+		glossary_config = {
 			'glossary': glossary.name,
-			'ignore_case': True
-	}
+			'ignore_case': True,
+		}
 
-	for pdf_page in range(int(startPage), int(endPage)):
-		print('[INFO] Translating ' + str(pdf_page) + 'p Start!')
-		txt_page = str(pdf_page) + '.txt'
-		translator(txt_page, pdf_page, glossary_config)
+		for pdf_page in range(int(startPage), int(endPage)):
+			print(f'[INFO] Translating {pdf_page}p start!')
+			txt_page = str(pdf_page) + '.txt'
+			translator(txt_page, pdf_page, glossary_config)
+
+	elif args.command == "docs":
+		if args.chapter is None:
+			print('[Error] Chapter number(-ch) are required with "docs" options')
+
+		if args.chapter is not None:
+			print(f'[INFO] Create google docs for chapter {args.chapter}')
+
+		docs_id, sheets_id = get_google_docs_sheets_id(args.chapter)
+		print(f'\t[INFO] Spreadsheets ID: {sheets_id}')
+		print(f'\t[INFO] Document ID: {docs_id}')
+
+		make_translation_documents(sheets_id, docs_id)
+		print ('[INFO] Complete!')
