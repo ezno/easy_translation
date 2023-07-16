@@ -37,6 +37,9 @@ import deepl
 import argparse
 import csv
 import time
+import base64
+import hmac
+import hashlib
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 
 try:
@@ -81,6 +84,8 @@ class G:
 	PAPAGO_CLIENT_ID = 'GARBAGEVALUE'
 	PAPAGO_CLIENT_SECRET = 'GARBAGEVALUE'
 	PAPAGO_GLOSSARY_ID = 'GARBAGEVALUE'
+	NCLOUD_CLINET_ID = 'GARBAGEVALUE'
+	NCLOUD_SECRET_KEY = 'GARBAGEVALUE'
 
 	# NAVER PAPAGO translation spare API Key - by Yena
 	''' 
@@ -107,6 +112,7 @@ def pre_string_changer(modified_text):
 		r"\f" : "",
 		'launchd' : '"launchd"',
 		'powerd' : '"powerd"',
+		'(cid:123)' : '',
 	}
 
 	for key,value in pre_word_dictionary.items():
@@ -174,8 +180,6 @@ def post_string_sanitizer(origText):
 			modifiedText = re.sub( key, value, modifiedText )
 
 	return modifiedText
-
-
 
 
 def naver_spell_check(q):
@@ -263,12 +267,12 @@ def get_glossary_from_sheet():
 
 def dict_to_csv(dictionary, filename):
     # Create a list of key-value pairs
-    rows = [(key, value) for key, value in dictionary.items()]
+    rows = [(key, value) for key, value in dictionary.items() if key is not None and value is not None]
 
     # Create a CSV file and write the key-value pairs
     with open(filename, 'w', newline='') as csvfile:
         writer = csv.writer(csvfile)
-        writer.writerow(['Key', 'Value'])  # Write column headers
+        writer.writerow(['en', 'ko'])  # Write column headers
         writer.writerows(rows)  # Write key-value pairs
 
     print(f"\tDictionary successfully converted and saved as '{filename}'.")
@@ -317,10 +321,8 @@ def create_google_nmt_glossary_on_GCloud(csv_content, glossary_dict_cnt):
 	    name=name,
 	    language_codes_set=language_codes_set,
 	    input_config=input_config )
-	#================================================================
-	#parent = client.location_path(G.GT_PROJECT_ID, G.GT_LOCATION)
+
 	parent = f'projects/{G.GT_GLOSSARY_PRJ_ID}/locations/{G.GT_LOCATION}'
-	#================================================================
 
 	glosssary_input_uri, glossary_cnt = list_glossaries(client, parent, glossary)
 
@@ -403,7 +405,8 @@ def glossary_notifier(inText, glossary):
 # 	- Load raw text and strings
 #  - Translate raw text from Kakao, Naver Papago, Google translation v3, DeepL
 # - Writ
-def translator(text_path, pageNum, glossary_config):
+#def translator(text_path, pageNum, glossary_config):
+def translator(text_path, pageNum):
 	# Record translation result on thie file in the client 
 	TranText = 'trns_' + text_path
 
@@ -463,7 +466,7 @@ def translator(text_path, pageNum, glossary_config):
 					textBlock['naverTrns'] = papago_translate(sentence.raw, 'en', 'ko')
 		
 					# Google NeuralMachineTranlate results: English > Korean
-					textBlock['googleTrns'] = google_neural_machine_translate_v3(sentence.raw, 'en', 'ko', glossary_config) + ' '
+					textBlock['googleTrns'] = google_neural_machine_translate_v3(sentence.raw, 'en', 'ko') + ' '
 
 					# KaKao translator beta: English > Korean Only
 					textBlock['kakaoTrns'] = kakao_neural_machine2_translate(sentence.raw, 'en', 'ko')
@@ -592,24 +595,29 @@ def google_neural_machine_translate(source, from_lang, to):
 
 # For Google Translation v3 
 # 	- Can use glossaries for translation
-def google_neural_machine_translate_v3(source, from_lang, to, glossary_config):
-	client = translate.TranslationServiceClient()
+def google_neural_machine_translate_v3(source, from_lang, to):
+	from google.cloud import translate
 
+	client = translate.TranslationServiceClient()
 	parent = f'projects/{G.GT_GLOSSARY_PRJ_ID}/locations/{G.GT_LOCATION}'
+
+	glossary = client.glossary_path(G.GT_PROJECT_ID, "us-central1", G.GT_GLOSSARY_ID)
+
+	glossary_config = translate.TranslateTextGlossaryConfig(glossary=glossary)
 
 	result = client.translate_text(
 			request= {
-				"parent": parent,
 				"contents": [source],
 				"source_language_code": from_lang,
 				"target_language_code": to,
+				"parent": parent,
 				"glossary_config": glossary_config,
 			}
 	)
 
 	translated_txt = ''
 
-	for glossary_translations in result.translations:
+	for glossary_translations in result.glossary_translations:
 		results_text = glossary_translations.translated_text
 		translated_txt = translated_txt + results_text
 
@@ -620,6 +628,7 @@ def google_neural_machine_translate_v3(source, from_lang, to, glossary_config):
 
 
 # NAVER Papago translation - free version
+# Need free translation API keys - client ID, secrey
 def naver_neural_machine2_translate(source, from_lang, to):
 	params = urllib.parse.urlencode({
 			'source':from_lang,
@@ -633,7 +642,6 @@ def naver_neural_machine2_translate(source, from_lang, to):
 			"X-Naver-Client-Id": G.PAPAGO_CLIENT_ID,
 			"X-Naver-Client-Secret": G.PAPAGO_CLIENT_SECRET,
 			"Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-			"glossaryKey": G.PAPAGO_GLOSSARY_ID,
 		}
 
 	conn = http.client.HTTPSConnection("openapi.naver.com")
@@ -650,13 +658,56 @@ def naver_neural_machine2_translate(source, from_lang, to):
 
 	return translated_txt
 
-# NAVER Papago translation 
+# NAVER Papago translation - paid version
+# Can work with glossary 
+def make_signature(access_key, secret_key, timestamp, url, method):
+	timestamp = str(timestamp)
+	secret_key = bytes(secret_key, 'UTF-8')
+
+	message = method + " " + url + "\n" + timestamp + "\n" + access_key
+	message = bytes(message, 'UTF-8')
+	signingKey = base64.b64encode(hmac.new(secret_key, message, digestmod=hashlib.sha256).digest())
+	return signingKey.decode('UTF-8')
+
+
+def papago_glossary_upload():
+	baseurl = "https://papago.apigw.ntruss.com"
+	url = "/glossary/v1/{}/upload"
+	url = url.format(G.PAPAGO_GLOSSARY_ID)
+
+	timestamp = int(time.time() * 1000)
+	method = "POST"
+
+	signature = make_signature(G.NCLOUD_CLINET_ID, G.NCLOUD_SECRET_KEY, timestamp, url, method)
+
+	url = baseurl + url
+	headers = {
+		"x-ncp-apigw-timestamp": str(timestamp),
+		"x-ncp-iam-access-key": G.NCLOUD_CLINET_ID,
+		"x-ncp-apigw-signature-v2": str(signature),
+	}
+	file = {
+		"file": (	G.GT_GLOSSARY_FILE_NAME, 
+						open(G.GT_GLOSSARY_FILE_NAME, 'rb'), 
+						"text/csv"	)
+	}
+
+	print(f'[INFO] Update Papago glossary data from Google sheet')
+	response = requests.post(url=url, verify=True, headers=headers, files=file)
+	data = json.loads(response.content.decode('utf-8'))
+	print(f"\tPapago glossary ID: {data['data']['glossaryKey']}")
+
+	return data['data']['glossaryKey']
+
+
+# NAVER Papago translation - paid version
 def papago_translate(source, from_lang, to):
 
 	params = urllib.parse.urlencode({
 			'source':from_lang,
 			'target':to,
 			'text':source,
+			'glossaryKey': G.PAPAGO_GLOSSARY_ID,
 		})
 
 	params = params.encode('utf-8')
@@ -668,7 +719,7 @@ def papago_translate(source, from_lang, to):
 		}
 
 	conn = http.client.HTTPSConnection("naveropenapi.apigw.ntruss.com")
-	conn.request("POST","/nmt/v1/translatio", params, headers)
+	conn.request("POST","/nmt/v1/translation", params, headers)
 	
 	response = conn.getresponse()
 	data = json.loads(response.read())
@@ -969,14 +1020,20 @@ if __name__ == '__main__':
 	G.SPREADSHEET_ID = config.get('API_KEYS', 'SPREADSHEET_ID')
 	G.SPREADSHEET_API_KEY = config.get('API_KEYS', 'SPREADSHEET_API_KEY')
 	G.GOOGLE_TRNS_API_KEY = config.get('API_KEYS', 'GOOGLE_TRNS_API_KEY')
+	# For DeepL translation API
 	G.DEEPL_AUTH_KEY = config.get('API_KEYS', 'DEEPL_AUTH_KEY')
+	# For Papago translation API
+	#	- Papago
 	G.PAPAGO_CLIENT_ID = config.get('API_KEYS', 'PAPAGO_CLIENT_ID')
 	G.PAPAGO_CLIENT_SECRET = config.get('API_KEYS', 'PAPAGO_CLIENT_SECRET')
 	G.PAPAGO_GLOSSARY_ID = config.get('API_KEYS', 'PAPAGO_GLOSSARY_ID')
+	#	- Glossary update
+	G.NCLOUD_CLINET_ID = config.get('API_KEYS', 'NCLOUD_CLINET_ID')
+	G.NCLOUD_SECRET_KEY = config.get('API_KEYS', 'NCLOUD_SECRET_KEY')
 
 	# For argument parsing
 	parser = argparse.ArgumentParser(
-		description = "Translate Automator V7.1 (2023.07.13.)",
+		description = "Translate Automator V8.1 (2023.07.16.)",
 		formatter_class = ArgumentDefaultsHelpFormatter )
 
 	subparsers = parser.add_subparsers(dest="command", help="Available commands")
@@ -992,7 +1049,7 @@ if __name__ == '__main__':
 
 	args = parser.parse_args()
 
-	# Handle option 1
+	# Handle Option [1] - translator
 	if args.command == "trns":
 		if args.start_page is None or args.end_page is None:
 			print('[Error] Both start page(-sp) and end page(-ep) numbers are required with "trns" options')
@@ -1009,23 +1066,19 @@ if __name__ == '__main__':
 		print('[INFO] Get glossary data from Google sheet')
 		glossary_dict, csv_content = get_glossary_from_sheet()
 		
-		dict_to_csv(glossary_dict, 'ML_in_R_glossary.csv')
+		dict_to_csv(glossary_dict, G.GT_GLOSSARY_FILE_NAME)
 		glossary_cnt = len(glossary_dict)
 
 		create_google_nmt_glossary_on_GCloud(csv_content, glossary_cnt)
-
-		glossary = get_google_nmt_glossaray()
-
-		glossary_config = {
-			'glossary': glossary.name,
-			'ignore_case': True,
-		}
+		#glossary = get_google_nmt_glossaray()
+		G.PAPAGO_GLOSSARY_ID = papago_glossary_upload()
 
 		for pdf_page in range(int(startPage), int(endPage)):
 			print(f'[INFO] Translating {pdf_page}p start!')
 			txt_page = str(pdf_page) + '.txt'
-			translator(txt_page, pdf_page, glossary_config)
+			translator(txt_page, pdf_page)
 
+	# Handle Option [2] - create translation goole doc
 	elif args.command == "docs":
 		if args.chapter is None:
 			print('[Error] Chapter number(-ch) are required with "docs" options')
