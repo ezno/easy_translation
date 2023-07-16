@@ -58,7 +58,7 @@ https://docs.google.com/spreadsheets/d/{SPREAD_SHEET_ID}/edit#gid=0
 3.  Go to Dashboard Google Spread sheet
 4.  Paste spreadsheet's Id on your part of `sheetID` column
 
-### Step 2 - run
+#### Step 2 - run
 1. Parepare `{page number.txt}` on the directory
 2. Run autoNMTTranslator.py code
 
@@ -95,6 +95,3 @@ https://docs.google.com/document/d/{DOCUMENT_ID}/edit
 ```
 python3 autoNMTTranslator.py docs -ch 3
 ```
-
-
-
