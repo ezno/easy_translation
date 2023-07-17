@@ -303,11 +303,12 @@ def glossary_notifier(inText, glossary):
 # 	- Load raw text and strings
 #  - Translate raw text from Kakao, Naver Papago, Google translation v3, DeepL
 # - Writ
-def translator(text_path, pageNum, glossary_config):
+def translator(chapter, text_path, pageNum, glossary_config):
 	# Record translation result on thie file in the client 
-	TranText = 'trns_' + text_path
+	TranText = os.path.join('outputs', 'trns_' + text_path)
+	input_path = os.path.join('ch'+str(chapter), text_path)
 
-	fpin = open(text_path, 'r+')
+	fpin = open(input_path, 'r+')
 	fpout = open(TranText, 'w+')
 
 	try:
@@ -696,23 +697,27 @@ if __name__ == '__main__':
 
 	# For argument parsing
 	parser = argparse.ArgumentParser(
-	              description = "Translate Automator V7 (2023.6.25.)",
-	              formatter_class = ArgumentDefaultsHelpFormatter )
+					description = "Translate Automator V7 (2023.6.25.)",
+					formatter_class = ArgumentDefaultsHelpFormatter )
 
 	# Parse command line arguments
+	parser.add_argument("-ch", "--chapter", help="Translation chapter", required=True)
 	parser.add_argument("-sp", "--startPage", help="Translation start page", required=True)
 	parser.add_argument("-ep", "--endPage", help="Translation end page", required=True)
 	args = vars(parser.parse_args())
 
 	# Set up parameters
+	if args["chapter"] is not None:
+		chapter = args["chapter"]
+	
 	if args["startPage"] is not None:
-	  startPage = (args["startPage"])
+		startPage = (args["startPage"])
 
 	if args["endPage"] is not None:
-	  # Sequence Numbers for this proeject - 1,3,5,7,10
-  	  endPage = args["endPage"]
+		# Sequence Numbers for this proeject - 1,3,5,7,10
+		endPage = args["endPage"]
 
-	print(f'[INFO] Translating from {startPage}p to {endPage}p')
+	print(f'[INFO] Translating from {startPage}p to {endPage}p in Chapter{chapter}')
 
 	print('[INFO] Get glossary data from Google sheet')
 	glossary_dict, csv_content = get_glossary_from_sheet()
@@ -728,4 +733,4 @@ if __name__ == '__main__':
 	for pdf_page in range(int(startPage), int(endPage)):
 		print('[INFO] Translating ' + str(pdf_page) + 'p Start!')
 		txt_page = str(pdf_page) + '.txt'
-		translator(txt_page, pdf_page, glossary_config)
+		translator(chapter, txt_page, pdf_page, glossary_config)
