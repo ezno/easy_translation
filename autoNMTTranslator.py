@@ -408,8 +408,8 @@ def glossary_notifier(inText, glossary):
 #def translator(text_path, pageNum, glossary_config):
 def translator(text_path, pageNum):
 	# Record translation result on thie file in the client 
-	TranText = os.path.join('outputs', 'trns_' + text_path)
-	input_path = os.path.join('ch'+str(chapter), text_path)
+	TranText = os.path.join('trns_' + text_path)
+	input_path = os.path.join(text_path)
 
 	fpin = open(input_path, 'r+')
 	fpout = open(TranText, 'w+')
@@ -1074,7 +1074,7 @@ if __name__ == '__main__':
 		#glossary = get_google_nmt_glossaray()
 		G.PAPAGO_GLOSSARY_ID = papago_glossary_upload()
 
-		for pdf_page in range(int(startPage), int(endPage)):
+		for pdf_page in range(int(startPage), int(endPage)+1):
 			print(f'[INFO] Translating {pdf_page}p start!')
 			txt_page = str(pdf_page) + '.txt'
 			translator(txt_page, pdf_page)
